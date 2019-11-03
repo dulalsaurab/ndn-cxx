@@ -51,7 +51,7 @@ protected:
                 SendDataArgs args{dataName, content, imsFresh, isFinalBlock};
                 sendDataHistory.push_back(args);
               },
-              [this] (const ControlResponse& resp) {
+              [this] (const ControlResponseBase& resp) {
                 sendNackHistory.push_back(resp);
               })
     , defaultImsFresh(1000_ms)
@@ -81,7 +81,7 @@ protected:
 
 protected:
   std::vector<SendDataArgs> sendDataHistory;
-  std::vector<ControlResponse> sendNackHistory;
+  std::vector<ControlResponseBase> sendNackHistory;
   shared_ptr<Interest> interest;
   Block contentBlock;
   mgmt::StatusDatasetContext context;

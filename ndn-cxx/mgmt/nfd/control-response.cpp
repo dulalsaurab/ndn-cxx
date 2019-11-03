@@ -19,12 +19,12 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#include "ndn-cxx/mgmt/control-response.hpp"
+#include "ndn-cxx/mgmt/nfd/control-response.hpp"
 #include "ndn-cxx/encoding/block-helpers.hpp"
 #include "ndn-cxx/encoding/tlv-nfd.hpp"
 
 namespace ndn {
-namespace mgmt {
+namespace nfd {
 
 // BOOST_CONCEPT_ASSERT((boost::EqualityComparable<ControlResponse>));
 BOOST_CONCEPT_ASSERT((WireEncodable<ControlResponse>));
@@ -101,5 +101,5 @@ operator<<(std::ostream& os, const ControlResponse& response)
   return os;
 }
 
-} // namespace mgmt
+} // namespace nfd
 } // namespace ndn

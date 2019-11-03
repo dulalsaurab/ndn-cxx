@@ -108,10 +108,13 @@ Dispatcher::isOverlappedWithOthers(const PartialName& relPrefix) const
 }
 
 void
-Dispatcher::afterAuthorizationRejected(RejectReply act, const Interest& interest)
+Dispatcher::afterAuthorizationRejected(RejectReply act, const Interest& interest, const OnValidateFailure& failure)
 {
   if (act == RejectReply::STATUS403) {
-    sendControlResponse(ControlResponse(403, "authorization rejected"), interest);
+    // this will be handler by failureHander
+    failure("authorization rejected", 403, 
+            [=](const auto& resp){ this->sendControlResponse(resp, interest); });
+    // sendControlResponse(ControlResponse(403, "authorization rejected"), interest);
   }
 }
 
@@ -195,19 +198,22 @@ Dispatcher::processAuthorizedControlCommandInterest(const std::string& requester
                                                     const Interest& interest,
                                                     const shared_ptr<ControlParameters>& parameters,
                                                     const ValidateParameters& validateParams,
-                                                    const ControlCommandHandler& handler)
+                                                    const ControlCommandHandler& successHandler,
+                                                    const OnValidateFailure& failure)
 {
   if (validateParams(*parameters)) {
-    handler(prefix, interest, *parameters,
+    successHandler(prefix, interest, *parameters,
             [=] (const auto& resp) { this->sendControlResponse(resp, interest); });
   }
   else {
-    sendControlResponse(ControlResponse(400, "failed in validating parameters"), interest);
+    // this will be handler by failureHander
+    failure("failed in validating parameters", 400, 
+            [=](const auto& resp){ this->sendControlResponse(resp, interest);});
   }
 }
 
 void
-Dispatcher::sendControlResponse(const ControlResponse& resp, const Interest& interest, bool isNack)
+Dispatcher::sendControlResponse(const ControlResponseBase& resp, const Interest& interest, bool isNack)
 {
   MetaInfo metaInfo;
   if (isNack) {
@@ -222,7 +228,8 @@ Dispatcher::sendControlResponse(const ControlResponse& resp, const Interest& int
 void
 Dispatcher::addStatusDataset(const PartialName& relPrefix,
                              Authorization authorize,
-                             StatusDatasetHandler handle)
+                             StatusDatasetHandler handle,
+                             OnValidateFailure failure)
 {
   if (!m_topLevelPrefixes.empty()) {
     NDN_THROW(std::domain_error("one or more top-level prefix has been added"));
@@ -234,8 +241,9 @@ Dispatcher::addStatusDataset(const PartialName& relPrefix,
 
   AuthorizationAcceptedCallback accepted =
     bind(&Dispatcher::processAuthorizedStatusDatasetInterest, this, _1, _2, _3, std::move(handle));
+  
   AuthorizationRejectedCallback rejected =
-    bind(&Dispatcher::afterAuthorizationRejected, this, _1, _2);
+    bind(&Dispatcher::afterAuthorizationRejected, this, _1, _2, std::move(failure));
 
   // follow the general path if storage is a miss
   InterestHandler missContinuation = bind(&Dispatcher::processStatusDatasetInterest, this, _1, _2,

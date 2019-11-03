@@ -25,7 +25,7 @@
 #include "ndn-cxx/face.hpp"
 #include "ndn-cxx/encoding/block.hpp"
 #include "ndn-cxx/ims/in-memory-storage-fifo.hpp"
-#include "ndn-cxx/mgmt/control-response.hpp"
+#include "ndn-cxx/mgmt/control-response-base.hpp"
 #include "ndn-cxx/mgmt/control-parameters.hpp"
 #include "ndn-cxx/mgmt/status-dataset-context.hpp"
 #include "ndn-cxx/security/key-chain.hpp"
@@ -92,7 +92,7 @@ typedef std::function<bool(const ControlParameters& params)> ValidateParameters;
 /** \brief a function to be called after ControlCommandHandler completes
  *  \param resp the response to be sent to requester
  */
-typedef std::function<void(const ControlResponse& resp)> CommandContinuation;
+typedef std::function<void(const ControlResponseBase& resp)> CommandContinuation;
 
 /** \brief a function to handle an authorized ControlCommand
  *  \param prefix top-level prefix, e.g., "/localhost/nfd";
@@ -104,6 +104,9 @@ typedef std::function<void(const ControlResponse& resp)> CommandContinuation;
 typedef std::function<void(const Name& prefix, const Interest& interest,
                            const ControlParameters& params,
                            const CommandContinuation& done)> ControlCommandHandler;
+
+ /* this is a validation failure handler */
+typedef std::function<void(std::string text, uint64_t statusCode, const CommandContinuation& done)> OnValidateFailure;
 
 // ---- STATUS DATASET ----
 
@@ -209,7 +212,8 @@ public: // ControlCommand
   addControlCommand(const PartialName& relPrefix,
                     Authorization authorize,
                     ValidateParameters validate,
-                    ControlCommandHandler handle);
+                    ControlCommandHandler successHandle,
+                    OnValidateFailure failure);
 
 public: // StatusDataset
   /** \brief register a StatusDataset or a prefix under which StatusDatasets can be requested
@@ -245,7 +249,8 @@ public: // StatusDataset
   void
   addStatusDataset(const PartialName& relPrefix,
                    Authorization authorize,
-                   StatusDatasetHandler handle);
+                   StatusDatasetHandler handle,
+                   OnValidateFailure failure);
 
 public: // NotificationStream
   /** \brief register a NotificationStream
@@ -299,7 +304,7 @@ private:
    * @param interest the incoming Interest
    */
   void
-  afterAuthorizationRejected(RejectReply act, const Interest& interest);
+  afterAuthorizationRejected(RejectReply act, const Interest& interest, const OnValidateFailure& failure);
 
   /**
    * @brief query Data the in-memory storage by a given Interest
@@ -384,10 +389,11 @@ private:
                                           const Interest& interest,
                                           const shared_ptr<ControlParameters>& parameters,
                                           const ValidateParameters& validate,
-                                          const ControlCommandHandler& handler);
+                                          const ControlCommandHandler& successHandler,
+                                          const OnValidateFailure& failure);
 
   void
-  sendControlResponse(const ControlResponse& resp, const Interest& interest, bool isNack = false);
+  sendControlResponse(const ControlResponseBase& resp, const Interest& interest, bool isNack = false);
 
   /**
    * @brief process the status-dataset Interest before authorization.
@@ -460,7 +466,8 @@ void
 Dispatcher::addControlCommand(const PartialName& relPrefix,
                               Authorization authorize,
                               ValidateParameters validate,
-                              ControlCommandHandler handle)
+                              ControlCommandHandler successHandle,
+                              OnValidateFailure failure)
 {
   if (!m_topLevelPrefixes.empty()) {
     NDN_THROW(std::domain_error("one or more top-level prefix has been added"));
@@ -476,10 +483,10 @@ Dispatcher::addControlCommand(const PartialName& relPrefix,
 
   AuthorizationAcceptedCallback accepted =
     bind(&Dispatcher::processAuthorizedControlCommandInterest, this,
-         _1, _2, _3, _4, std::move(validate), std::move(handle));
+         _1, _2, _3, _4, std::move(validate), std::move(successHandle), std::move(failure));
 
   AuthorizationRejectedCallback rejected =
-    bind(&Dispatcher::afterAuthorizationRejected, this, _1, _2);
+    bind(&Dispatcher::afterAuthorizationRejected, this, _1, _2, std::move(failure));
 
   m_handlers[relPrefix] = bind(&Dispatcher::processControlCommandInterest, this,
                                _1, relPrefix, _2, std::move(parser), std::move(authorize),

@@ -102,25 +102,29 @@ BOOST_AUTO_TEST_CASE(Basic)
   BOOST_CHECK_NO_THROW(dispatcher
                          .addControlCommand<VoidParameters>("test/1", makeAcceptAllAuthorization(),
                                                             bind([] { return true; }),
+                                                            bind([]{}),
                                                             bind([]{})));
   BOOST_CHECK_NO_THROW(dispatcher
                          .addControlCommand<VoidParameters>("test/2", makeAcceptAllAuthorization(),
                                                             bind([] { return true; }),
+                                                            bind([]{}),
                                                             bind([]{})));
-
   BOOST_CHECK_THROW(dispatcher
                       .addControlCommand<VoidParameters>("test", makeAcceptAllAuthorization(),
                                                          bind([] { return true; }),
-                                                         bind([]{})),
-                    std::out_of_range);
+                                                         bind([]{}),bind([]{})), std::out_of_range);
 
   BOOST_CHECK_NO_THROW(dispatcher.addStatusDataset("status/1",
-                                                   makeAcceptAllAuthorization(), bind([]{})));
+                                                   makeAcceptAllAuthorization(), bind([]{}),
+                                                   bind([]{})));
+
   BOOST_CHECK_NO_THROW(dispatcher.addStatusDataset("status/2",
-                                                   makeAcceptAllAuthorization(), bind([]{})));
+                                                   makeAcceptAllAuthorization(), bind([]{}),
+                                                   bind([]{})));
+
   BOOST_CHECK_THROW(dispatcher.addStatusDataset("status",
-                                                makeAcceptAllAuthorization(), bind([]{})),
-                    std::out_of_range);
+                                                makeAcceptAllAuthorization(), bind([]{}),
+                                                bind([]{})), std::out_of_range);
 
   BOOST_CHECK_NO_THROW(dispatcher.addNotificationStream("stream/1"));
   BOOST_CHECK_NO_THROW(dispatcher.addNotificationStream("stream/2"));
@@ -134,12 +138,11 @@ BOOST_AUTO_TEST_CASE(Basic)
   BOOST_CHECK_THROW(dispatcher
                       .addControlCommand<VoidParameters>("test/3", makeAcceptAllAuthorization(),
                                                          bind([] { return true; }),
-                                                         bind([]{})),
-                    std::domain_error);
+                                                         bind([]{}),bind([]{})), std::out_of_range);
 
   BOOST_CHECK_THROW(dispatcher.addStatusDataset("status/3",
-                                                makeAcceptAllAuthorization(), bind([]{})),
-                    std::domain_error);
+                                                makeAcceptAllAuthorization(), bind([]{}),
+                                                bind([]{})), std::domain_error);
 
   BOOST_CHECK_THROW(dispatcher.addNotificationStream("stream/3"), std::domain_error);
 }
@@ -150,12 +153,14 @@ BOOST_AUTO_TEST_CASE(AddRemoveTopPrefix)
   dispatcher
     .addControlCommand<VoidParameters>("test/1", makeAcceptAllAuthorization(),
                                        bind([] { return true; }),
-                                       bind([&nCallbackCalled] { ++nCallbackCalled["test/1"]; }));
+                                       bind([&nCallbackCalled] { ++nCallbackCalled["test/1"]; }),
+                                       bind([]{}));
 
   dispatcher
     .addControlCommand<VoidParameters>("test/2", makeAcceptAllAuthorization(),
                                        bind([] { return true; }),
-                                       bind([&nCallbackCalled] { ++nCallbackCalled["test/2"]; }));
+                                       bind([&nCallbackCalled] { ++nCallbackCalled["test/2"]; }),
+                                       bind([]{}));
 
   face.receive(*makeInterest("/root/1/test/1/%80%00"));
   advanceClocks(1_ms);
@@ -211,7 +216,8 @@ BOOST_AUTO_TEST_CASE(ControlCommand)
     .addControlCommand<VoidParameters>("test",
                                        makeTestAuthorization(),
                                        bind([] { return true; }),
-                                       bind([&nCallbackCalled] { ++nCallbackCalled; }));
+                                       bind([&nCallbackCalled] { ++nCallbackCalled; }),
+                                       bind([]{}));
 
   dispatcher.addTopPrefix("/root");
   advanceClocks(1_ms);
@@ -235,6 +241,30 @@ BOOST_AUTO_TEST_CASE(ControlCommand)
   advanceClocks(1_ms, 10);
   BOOST_CHECK_EQUAL(nCallbackCalled, 1);
 }
+
+BOOST_AUTO_TEST_CASE(ControlCommandValidationFailure)
+{
+  size_t nCallbackCalled = 0;
+  dispatcher
+    .addControlCommand<VoidParameters>("test",
+                                       makeTestAuthorization(),
+                                       bind([] { return false; }),
+                                       bind([]{}),
+                                       bind([&nCallbackCalled]{++nCallbackCalled;}));
+
+  dispatcher.addTopPrefix("/root");
+  advanceClocks(1_ms);
+  face.sentData.clear();
+
+  face.receive(*makeInterest("/root/test/%80%00/valid"));
+  advanceClocks(1_ms);
+  BOOST_CHECK_EQUAL(nCallbackCalled, 1);
+
+  face.receive(*makeInterest("/root/test/%80%00/valid"));
+  advanceClocks(1_ms);
+  BOOST_CHECK_EQUAL(nCallbackCalled, 2);
+}
+
 
 class StatefulParameters : public mgmt::ControlParameters
 {
@@ -287,7 +317,8 @@ BOOST_AUTO_TEST_CASE(ControlCommandAsyncAuthorization) // Bug 4059
     .addControlCommand<StatefulParameters>("test",
                                            authorization,
                                            validateParameters,
-                                           bind([&nCallbackCalled] { ++nCallbackCalled; }));
+                                           bind([&nCallbackCalled] { ++nCallbackCalled; }),
+                                           bind([]{}));
 
   dispatcher.addTopPrefix("/root");
   advanceClocks(1_ms);
@@ -325,7 +356,7 @@ BOOST_AUTO_TEST_CASE(StatusDataset)
                                 context.append(smallBlock);
                                 context.append(smallBlock);
                                 context.end();
-                              });
+                              }, bind([]{}));
 
   dispatcher.addStatusDataset("test/large",
                               makeTestAuthorization(),
@@ -335,14 +366,14 @@ BOOST_AUTO_TEST_CASE(StatusDataset)
                                 context.append(largeBlock);
                                 context.append(largeBlock);
                                 context.end();
-                              });
+                              }, bind([]{}));
 
   dispatcher.addStatusDataset("test/reject",
                               makeTestAuthorization(),
                               [] (const Name& prefix, const Interest& interest,
                                   StatusDatasetContext& context) {
                                 context.reject();
-                              });
+                              }, bind([]{}));
 
   dispatcher.addTopPrefix("/root");
   advanceClocks(1_ms);
